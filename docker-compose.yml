@@ -7,6 +7,8 @@ services:
       - 2020:3000
     environment:
       RUST_LOG: debug
+    volumes:
+      - kepseefile-data:/files  # Привязываем volume к /files
 
 volumes:
   kepseefile-data:
