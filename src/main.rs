@@ -204,19 +204,19 @@ async fn main() -> std::io::Result<()> {
     let bind_address = format!("0.0.0.0:{}", port);
 
     // Create a one-shot channel for shutting down the server
-    let (tx, _) = tokio::sync::oneshot::channel();
+    // let (tx, _) = tokio::sync::oneshot::channel();
 
     // Spawn a new task that waits for a line from stdin and then sends a signal to the channel
-    tokio::spawn(async move {
-        let mut reader = BufReader::new(io::stdin());
-        let mut buffer = String::new();
-        reader.read_line(&mut buffer).await.expect("Failed to read line from stdin");
+    // tokio::spawn(async move {
+    //     let mut reader = BufReader::new(io::stdin());
+    //     let mut buffer = String::new();
+    //     reader.read_line(&mut buffer).await.expect("Failed to read line from stdin");
         
-        // Send a shutdown signal if channel is open
-        if tx.send(()).is_err() {
-            eprintln!("Failed to send shutdown signal, the receiver might have dropped.");
-        }
-    });
+    //     // Send a shutdown signal if channel is open
+    //     if tx.send(()).is_err() {
+    //         eprintln!("Failed to send shutdown signal, the receiver might have dropped.");
+    //     }
+    // });
 
     // Create a new HTTP server
     let server = HttpServer::new(|| {
