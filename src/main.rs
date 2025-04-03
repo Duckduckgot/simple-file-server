@@ -43,8 +43,8 @@ async fn upload(mut payload: Multipart) -> impl Responder {
         if filename.is_empty() {
             return HttpResponse::BadRequest().body("Invalid filename");
         }
-        let filepath = format!("./{}", filename);
-        if Path::new(&filepath).exists() {
+        let filepath = upload_dir.join(&filename);
+        if filepath.exists() {
             return HttpResponse::Conflict().body("File already exists");
         }
         let mut f = File::create(&filepath).await.unwrap();
@@ -73,7 +73,7 @@ async fn download(filename: web::Path<String>) -> impl Responder {
     let filename = sanitize(filename.into_inner());
     let filepath = PathBuf::from("/files").join(&filename);
 
-    if Path::new(&filepath).exists() {
+    if filepath.exists() {
         let data = fs::read(filepath).unwrap();
         HttpResponse::Ok().body(data)
     } else {
@@ -130,7 +130,7 @@ async fn delete(filename: web::Path<String>) -> impl Responder {
     let filename = sanitize(filename.into_inner());
     let filepath = PathBuf::from("/files").join(&filename);
 
-    if Path::new(&filepath).exists() {
+    if filepath.exists() {
         fs::remove_file(filepath).unwrap();
         HttpResponse::Ok().body("File deleted successfully")
     } else {
