@@ -204,7 +204,7 @@ async fn main() -> std::io::Result<()> {
     let bind_address = format!("0.0.0.0:{}", port);
 
     // Create a one-shot channel for shutting down the server
-    let (tx, rx) = tokio::sync::oneshot::channel();
+    let (tx, _) = tokio::sync::oneshot::channel();
 
     // Spawn a new task that waits for a line from stdin and then sends a signal to the channel
     tokio::spawn(async move {
