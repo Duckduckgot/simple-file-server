@@ -211,7 +211,11 @@ async fn main() -> std::io::Result<()> {
         let mut reader = BufReader::new(io::stdin());
         let mut buffer = String::new();
         reader.read_line(&mut buffer).await.expect("Failed to read line from stdin");
-        tx.send(()).unwrap();
+        
+        // Send a shutdown signal if channel is open
+        if tx.send(()).is_err() {
+            eprintln!("Failed to send shutdown signal, the receiver might have dropped.");
+        }
     });
 
     // Create a new HTTP server
