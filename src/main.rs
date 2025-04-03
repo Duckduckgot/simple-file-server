@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::{StreamExt, TryStreamExt};
 use sanitize_filename::sanitize;
-use tokio::{fs::File, io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}};
+use tokio::{fs::File, io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, signal::unix::{signal, SignalKind}};
 use std::fs;
 use std::path::Path;
 use tokio_util::io::ReaderStream;
@@ -134,6 +134,16 @@ async fn delete(filename: web::Path<String>) -> impl Responder {
         HttpResponse::Ok().body("File deleted successfully")
     } else {
         HttpResponse::NotFound().body("File not found")
+    }
+}
+
+async fn wait_for_shutdown() {
+    let mut sigterm = signal(SignalKind::terminate()).unwrap();
+    let mut sigint = signal(SignalKind::interrupt()).unwrap();
+
+    tokio::select! {
+        _ = sigint.recv() => println!("Received SIGINT (Ctrl+C), shutting down..."),
+        _ = sigterm.recv() => println!("Received SIGTERM, shutting down..."),
     }
 }
 
@@ -277,9 +287,7 @@ async fn main() -> std::io::Result<()> {
     // Wait for either the server to finish or a signal from the channel
     tokio::select! {
         _ = server => {},
-        _ = rx => {
-            println!("ENTER pressed, shutting down");
-        }
+        _ = wait_for_shutdown() => {}
     }
 
     Ok(())
