@@ -37,22 +37,51 @@ use rustls_pemfile::{certs, rsa_private_keys, pkcs8_private_keys, ec_private_key
 #[post("/upload")]
 async fn upload(mut payload: Multipart) -> impl Responder {
     let upload_dir = PathBuf::from("/files");
+
     while let Ok(Some(mut field)) = payload.try_next().await {
         let content_disposition = field.content_disposition();
         let filename = sanitize(content_disposition.get_filename().unwrap_or_default());
+
         if filename.is_empty() {
             return HttpResponse::BadRequest().body("Invalid filename");
         }
+
         let filepath = upload_dir.join(&filename);
-        if filepath.exists() {
-            return HttpResponse::Conflict().body("File already exists");
-        }
-        let mut f = File::create(&filepath).await.unwrap();
+
+        // Попытка создать файл только если он ещё не существует (без гонки)
+        let mut file = match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&filepath)
+            .await
+        {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                return HttpResponse::Conflict().body("File already exists");
+            }
+            Err(e) => {
+                eprintln!("Failed to create file {}: {}", filepath.display(), e);
+                return HttpResponse::InternalServerError().body("Could not create file");
+            }
+        };
+
+        // Запись чанков
         while let Some(chunk) = field.next().await {
-            let data = chunk.unwrap();
-            f.write_all(&data).await.unwrap();
+            match chunk {
+                Ok(data) => {
+                    if let Err(e) = file.write_all(&data).await {
+                        eprintln!("Write error for file {}: {}", filepath.display(), e);
+                        return HttpResponse::InternalServerError().body("Could not write to file");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error reading multipart chunk: {}", e);
+                    return HttpResponse::InternalServerError().body("Error reading upload data");
+                }
+            }
         }
     }
+
     HttpResponse::Ok().body("File uploaded successfully")
 }
 
