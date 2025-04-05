@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::{StreamExt, TryStreamExt};
 use sanitize_filename::sanitize;
-use tokio::{fs::File, io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, signal::unix::{signal, SignalKind}};
+use tokio::{fs::{File, OpenOptions}, io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, signal::unix::{signal, SignalKind}};
 use std::fs;
 use std::path::Path;
 use tokio_util::io::ReaderStream;
