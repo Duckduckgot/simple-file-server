@@ -6,7 +6,6 @@ use futures::{StreamExt, TryStreamExt};
 use sanitize_filename::sanitize;
 use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt};
 use std::fs;
-use path_slash::PathBufExt;
 use tokio_util::io::ReaderStream;
 use clap::{Command, arg};
 use rustls::{ServerConfig, Certificate};
@@ -36,7 +35,7 @@ use rustls_pemfile::{certs, rsa_private_keys, pkcs8_private_keys, ec_private_key
 /// * `Conflict` if a file with the same name already exists on the server.
 #[post("/upload")]
 async fn upload(mut payload: Multipart) -> impl Responder {
-    let upload_dir = PathBuf::from_slash("/files");
+    let upload_dir = PathBuf::from("\files");
 
     while let Ok(Some(mut field)) = payload.try_next().await {
         let content_disposition = field.content_disposition();
@@ -100,7 +99,7 @@ async fn upload(mut payload: Multipart) -> impl Responder {
 #[get("/download/{filename}")]
 async fn download(filename: web::Path<String>) -> impl Responder {
     let filename = sanitize(filename.into_inner());
-    let filepath = PathBuf::from_slash("/files").join(&filename);
+    let filepath = PathBuf::from("\files").join(&filename);
 
     if filepath.exists() {
         let data = fs::read(filepath).unwrap();
@@ -127,7 +126,7 @@ async fn download(filename: web::Path<String>) -> impl Responder {
 #[get("/download-chunked/{filename:.*}")]
 async fn chunked_download(path: web::Path<String>) -> impl Responder {
     let filename = sanitize(path.into_inner());
-    let file_path = PathBuf::from_slash("/files").join(filename);
+    let file_path = PathBuf::from("\files").join(filename);
 
     if file_path.exists() {
         match File::open(&file_path).await {
@@ -157,7 +156,7 @@ async fn chunked_download(path: web::Path<String>) -> impl Responder {
 #[delete("/{filename}")]
 async fn delete(filename: web::Path<String>) -> impl Responder {
     let filename = sanitize(filename.into_inner());
-    let filepath = PathBuf::from_slash("/files").join(&filename);
+    let filepath = PathBuf::from("\files").join(&filename);
 
     if filepath.exists() {
         fs::remove_file(filepath).unwrap();
