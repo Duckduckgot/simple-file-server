@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder};
 use futures::{StreamExt, TryStreamExt};
 use sanitize_filename::sanitize;
-use tokio::{fs::{File, OpenOptions}, io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, signal::unix::{signal, SignalKind}};
+use tokio::{fs::{File, OpenOptions}, io::AsyncWriteExt;
 use std::fs;
 use std::path::Path;
 use tokio_util::io::ReaderStream;
@@ -167,16 +167,6 @@ async fn delete(filename: web::Path<String>) -> impl Responder {
     }
 }
 
-async fn wait_for_shutdown() {
-    let mut sigterm = signal(SignalKind::terminate()).unwrap();
-    let mut sigint = signal(SignalKind::interrupt()).unwrap();
-
-    tokio::select! {
-        _ = sigint.recv() => println!("Received SIGINT (Ctrl+C), shutting down..."),
-        _ = sigterm.recv() => println!("Received SIGTERM, shutting down..."),
-    }
-}
-
 /// Entry point for the File Server application.
 ///
 /// This function sets up the command line arguments, reads the arguments provided by the user,
@@ -320,8 +310,7 @@ async fn main() -> std::io::Result<()> {
 
     // Wait for either the server to finish or a signal from the channel
     tokio::select! {
-        _ = server => {},
-        _ = wait_for_shutdown() => {}
+        _ = server => {}
     }
 
     Ok(())
