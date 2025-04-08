@@ -339,65 +339,6 @@ async fn chunked_download(path: web::Path<String>) -> impl Responder {
     }
 }
 
-// #[get("/download-range/{filename:.*}")]
-// async fn download_range(
-//     path: web::Path<String>,
-//     req: HttpRequest,
-// ) -> impl Responder {
-//     // ✅ Авторизация через токен
-//     if !is_token_valid(&req) {
-//         return HttpResponse::Unauthorized().body("Unauthorized");
-//     }
-
-//     let filename = sanitize(path.into_inner());
-//     let file_path = PathBuf::from("/files").join(&filename);
-
-//     if !file_path.exists() {
-//         return HttpResponse::NotFound().body("Файл не найден");
-//     }
-
-//     let mut file = match File::open(&file_path).await {
-//         Ok(f) => f,
-//         Err(_) => return HttpResponse::InternalServerError().body("Ошибка открытия файла"),
-//     };
-
-//     let metadata = match file.metadata().await {
-//         Ok(m) => m,
-//         Err(_) => return HttpResponse::InternalServerError().body("Ошибка метаданных"),
-//     };
-
-//     let file_size = metadata.len();
-//     let content_type = from_path(&file_path).first_or_octet_stream();
-//     let disposition = format!("attachment; filename=\"{}\"", filename);
-
-//     if let Some(range_header) = req.headers().get(header::RANGE) {
-//         if let Some((start, end)) = parse_range_header(range_header.to_str().unwrap_or(""), file_size) {
-//             let chunk_size = end - start + 1;
-//             if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
-//                 return HttpResponse::InternalServerError().body("Ошибка seek");
-//             }
-
-//             let stream = ReaderStream::new(file.take(chunk_size));
-
-//             return HttpResponse::PartialContent()
-//                 .append_header((header::CONTENT_TYPE, content_type.as_ref()))
-//                 .append_header((header::CONTENT_LENGTH, chunk_size.to_string()))
-//                 .append_header((header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, file_size)))
-//                 .append_header((header::ACCEPT_RANGES, "bytes"))
-//                 .append_header((header::CONTENT_DISPOSITION, disposition))
-//                 .streaming(stream);
-//         }
-//     }
-
-//     let stream = ReaderStream::new(file);
-//     HttpResponse::Ok()
-//         .append_header((header::CONTENT_TYPE, content_type.as_ref()))
-//         .append_header((header::CONTENT_LENGTH, file_size.to_string()))
-//         .append_header((header::ACCEPT_RANGES, "bytes"))
-//         .append_header((header::CONTENT_DISPOSITION, disposition))
-//         .streaming(stream)
-// }
-
 /// Handles delete requests for files on the server.
 ///
 /// This function sanitizes the provided filename and checks if the file exists on the server.
@@ -514,6 +455,13 @@ async fn main() -> std::io::Result<()> {
     // Create a new HTTP server
     let server = HttpServer::new(|| {
         App::new()
+            .wrap(
+                Cors::default()
+                    .allowed_origin("https://kepsee.com")
+                    .allowed_methods(vec!["GET", "POST"])
+                    .allowed_headers(vec![header::CONTENT_TYPE])
+                    .max_age(3600),
+            )
             .service(upload)
             .service(download)
             .service(chunked_download)
