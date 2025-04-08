@@ -26,17 +26,11 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use once_cell::sync::Lazy;
-use std::env;
 
 type HmacSha256 = Hmac<Sha256>;
 
-static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
-    env::var("SECRET_KEY")
-        .unwrap_or_else(|_| "super_secret_key".to_string())
-        .into_bytes()
-});
-
-const FILE_DIR: &str = "/files";
+const SECRET_KEY: &[u8] = b"kali_berd_kepsee_2025";
+const FILE_DIR: &str = r"\files";
 
 static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
 
@@ -49,7 +43,7 @@ fn generate_token(filename: &str, expires: u64) -> String {
     use sha2::Sha256;
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(&SECRET_KEY).unwrap();
+    let mut mac = HmacSha256::new_from_slice(SECRET_KEY).unwrap();
     mac.update(filename.as_bytes());
     mac.update(expires.to_string().as_bytes());
     hex::encode(mac.finalize().into_bytes())
@@ -95,9 +89,10 @@ fn parse_range_header(header_value: &str, file_size: u64) -> Option<(u64, u64)> 
     None
 }
 
-#[get("/fastdl/{filename:.*}")]
+#[get("/download-range/{filename:.*}")]
 async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Responder {
-    let filename = sanitize_filename(path.into_inner());
+    // let filename = sanitize_filename(path.into_inner());
+    let filename = sanitize(filename.into_inner());
 
     if !is_token_valid(&req, &filename) {
         return HttpResponse::Unauthorized().body("Invalid or expired token");
@@ -151,12 +146,8 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
 
 #[get("/generate-download-url/{filename:.*}")]
 async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> impl Responder {
-    let filename = sanitize_filename(path.into_inner());
-    let file_path = PathBuf::from(FILE_DIR).join(&filename);
-
-    if !file_path.exists() {
-        return HttpResponse::NotFound().body("File not found");
-    }
+    // let filename = sanitize_filename(path.into_inner());
+    let filename = sanitize(filename.into_inner());
     let default_ttl = 300;
     let max_ttl = 3600;
 
@@ -185,7 +176,7 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
         .map(char::from)
         .collect();
 
-    let full_url = format!("/fastdl/{}?token={}&expires={}", filename, token, expires);
+    let full_url = format!("/download-range/{}?token={}&expires={}", filename, token, expires);
     SHORTLINKS.insert(short_id.clone(), (full_url.clone(), expires));
 
     let conn_info = req.connection_info();
@@ -347,6 +338,65 @@ async fn chunked_download(path: web::Path<String>) -> impl Responder {
         HttpResponse::NotFound().body("File not found")
     }
 }
+
+// #[get("/download-range/{filename:.*}")]
+// async fn download_range(
+//     path: web::Path<String>,
+//     req: HttpRequest,
+// ) -> impl Responder {
+//     // ✅ Авторизация через токен
+//     if !is_token_valid(&req) {
+//         return HttpResponse::Unauthorized().body("Unauthorized");
+//     }
+
+//     let filename = sanitize(path.into_inner());
+//     let file_path = PathBuf::from("/files").join(&filename);
+
+//     if !file_path.exists() {
+//         return HttpResponse::NotFound().body("Файл не найден");
+//     }
+
+//     let mut file = match File::open(&file_path).await {
+//         Ok(f) => f,
+//         Err(_) => return HttpResponse::InternalServerError().body("Ошибка открытия файла"),
+//     };
+
+//     let metadata = match file.metadata().await {
+//         Ok(m) => m,
+//         Err(_) => return HttpResponse::InternalServerError().body("Ошибка метаданных"),
+//     };
+
+//     let file_size = metadata.len();
+//     let content_type = from_path(&file_path).first_or_octet_stream();
+//     let disposition = format!("attachment; filename=\"{}\"", filename);
+
+//     if let Some(range_header) = req.headers().get(header::RANGE) {
+//         if let Some((start, end)) = parse_range_header(range_header.to_str().unwrap_or(""), file_size) {
+//             let chunk_size = end - start + 1;
+//             if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
+//                 return HttpResponse::InternalServerError().body("Ошибка seek");
+//             }
+
+//             let stream = ReaderStream::new(file.take(chunk_size));
+
+//             return HttpResponse::PartialContent()
+//                 .append_header((header::CONTENT_TYPE, content_type.as_ref()))
+//                 .append_header((header::CONTENT_LENGTH, chunk_size.to_string()))
+//                 .append_header((header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, file_size)))
+//                 .append_header((header::ACCEPT_RANGES, "bytes"))
+//                 .append_header((header::CONTENT_DISPOSITION, disposition))
+//                 .streaming(stream);
+//         }
+//     }
+
+//     let stream = ReaderStream::new(file);
+//     HttpResponse::Ok()
+//         .append_header((header::CONTENT_TYPE, content_type.as_ref()))
+//         .append_header((header::CONTENT_LENGTH, file_size.to_string()))
+//         .append_header((header::ACCEPT_RANGES, "bytes"))
+//         .append_header((header::CONTENT_DISPOSITION, disposition))
+//         .streaming(stream)
+// }
 
 /// Handles delete requests for files on the server.
 ///
