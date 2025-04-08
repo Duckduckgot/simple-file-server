@@ -30,13 +30,11 @@ use std::env;
 
 type HmacSha256 = Hmac<Sha256>;
 
-static SUPER_SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
+static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
     env::var("SECRET_KEY")
         .unwrap_or_else(|_| "super_secret_key".to_string())
         .into_bytes()
 });
-
-let SECRET_KEY: &[u8] = &SUPER_SECRET_KEY;
 
 const FILE_DIR: &str = "/files";
 
@@ -51,7 +49,7 @@ fn generate_token(filename: &str, expires: u64) -> String {
     use sha2::Sha256;
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(SECRET_KEY).unwrap();
+    let mut mac = HmacSha256::new_from_slice(&SECRET_KEY).unwrap();
     mac.update(filename.as_bytes());
     mac.update(expires.to_string().as_bytes());
     hex::encode(mac.finalize().into_bytes())
