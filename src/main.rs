@@ -92,7 +92,7 @@ fn parse_range_header(header_value: &str, file_size: u64) -> Option<(u64, u64)> 
 #[get("/download-range/{filename:.*}")]
 async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     // let filename = sanitize_filename(path.into_inner());
-    let filename = sanitize(filename.into_inner());
+    let filename = sanitize(path.into_inner());
 
     if !is_token_valid(&req, &filename) {
         return HttpResponse::Unauthorized().body("Invalid or expired token");
@@ -147,7 +147,7 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
 #[get("/generate-download-url/{filename:.*}")]
 async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     // let filename = sanitize_filename(path.into_inner());
-    let filename = sanitize(filename.into_inner());
+    let filename = sanitize(path.into_inner());
     let default_ttl = 300;
     let max_ttl = 3600;
 
