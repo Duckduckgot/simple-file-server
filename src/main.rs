@@ -26,10 +26,18 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use once_cell::sync::Lazy;
+use std::env;
 
 type HmacSha256 = Hmac<Sha256>;
 
-const SECRET_KEY: &[u8] = b"super_secret_token";
+static SUPER_SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
+    env::var("SECRET_KEY")
+        .unwrap_or_else(|_| "super_secret_key".to_string())
+        .into_bytes()
+});
+
+let SECRET_KEY: &[u8] = &SUPER_SECRET_KEY;
+
 const FILE_DIR: &str = "/files";
 
 static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
