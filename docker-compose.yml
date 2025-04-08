@@ -7,8 +7,9 @@ services:
       - 2020:3000
     environment:
       RUST_LOG: debug
+      SECRET_KEY: "super_secret_token"
     volumes:
-      - kepseefile-data:/files  # Привязываем volume к /files
+      - kepseefile-data:/files
 
 volumes:
   kepseefile-data:
