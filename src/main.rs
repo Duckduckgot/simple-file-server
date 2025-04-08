@@ -20,15 +20,19 @@ use tokio_util::io::ReaderStream;
 use clap::{Command, arg};
 use rustls::{ServerConfig, Certificate};
 use rustls_pemfile::{certs, rsa_private_keys, pkcs8_private_keys, ec_private_keys};
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
 use mime_guess::from_path;
+use dashmap::DashMap;
+use std::sync::Arc;
+use tokio::time::{sleep, Duration};
+use once_cell::sync::Lazy;
 
-const SECRET_KEY: &[u8] = b"kali_berd_kepsee_2025";
+type HmacSha256 = Hmac<Sha256>;
+
+const SECRET_KEY: &[u8] = b"super_secret_token";
 const FILE_DIR: &str = "/files";
 
-lazy_static! {
-    static ref SHORTLINKS: Mutex<HashMap<String, String>> = Mutex::new(HashMap::new());
-}
+static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
 
 fn sanitize_filename(input: String) -> String {
     input.replace("../", "").replace("/", "")
@@ -171,7 +175,7 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
         .collect();
 
     let full_url = format!("/download-range/{}?token={}&expires={}", filename, token, expires);
-    SHORTLINKS.lock().unwrap().insert(short_id.clone(), full_url);
+    SHORTLINKS.insert(short_id.clone(), (full_url.clone(), expires));
 
     let conn_info = req.connection_info();
     let scheme = conn_info.scheme();
@@ -186,19 +190,24 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
 #[get("/dl/{short_id}")]
 async fn redirect_short_link(short_id: web::Path<String>, req: HttpRequest) -> impl Responder {
     let id = short_id.into_inner();
+    if let Some((url, expires)) = SHORTLINKS.get(&id).map(|entry| entry.clone()) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        if now > expires {
+            SHORTLINKS.remove(&id);
+            return HttpResponse::NotFound().body("Url expired");
+        }
 
-    if let Some(full_url) = SHORTLINKS.lock().unwrap().get(&id) {
         let conn_info = req.connection_info();
         let scheme = conn_info.scheme();
         let host = conn_info.host();
-        let redirect_url = format!("{}://{}{}", scheme, host, full_url);
+        let redirect_url = format!("{}://{}{}", scheme, host, url);
 
         return HttpResponse::Found()
             .append_header(("Location", redirect_url))
             .finish();
     }
 
-    HttpResponse::NotFound().body("Ссылка не найдена или устарела")
+    HttpResponse::NotFound().body("Url not found")
 }
 
 /// Handles file uploads to the server.
@@ -456,6 +465,21 @@ async fn delete(filename: web::Path<String>) -> impl Responder {
 /// ```
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let shortlinks = SHORTLINKS.clone();
+    tokio::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(60)).await;
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let keys_to_remove: Vec<_> = shortlinks.iter()
+                .filter(|e| e.value().1 <= now)
+                .map(|e| e.key().clone())
+                .collect();
+
+            for key in keys_to_remove {
+                shortlinks.remove(&key);
+            }
+        }
+    });
     // Define command line arguments
     let matches = Command::new("File Server")
     .version("1.0")
