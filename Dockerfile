@@ -13,6 +13,6 @@ RUN useradd -ms /bin/bash -u 1001 kali
 RUN mkdir -p /files && chown kali:kali /files
 WORKDIR /home/kali/simple-file-server
 COPY . .
-COPY --from=rust /src/target/release/simple-file-server .
+COPY --from=rust /src/target/x86_64-unknown-linux-musl/release/simple-file-server .
 USER kali
 CMD [ "/home/kali/simple-file-server/simple-file-server" ]
