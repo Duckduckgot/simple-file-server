@@ -26,6 +26,7 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use once_cell::sync::Lazy;
+use actix_cors::Cors;
 
 type HmacSha256 = Hmac<Sha256>;
 
