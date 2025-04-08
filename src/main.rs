@@ -27,11 +27,17 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use once_cell::sync::Lazy;
 use actix_cors::Cors;
+use std::env;
 
 type HmacSha256 = Hmac<Sha256>;
 
-const SECRET_KEY: &[u8] = b"kali_berd_kepsee_2025";
-const FILE_DIR: &str = r"\files";
+static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
+    env::var("SECRET_KEY")
+        .unwrap_or_else(|_| "super_secret_key".to_string())
+        .into_bytes()
+});
+
+const FILE_DIR: &str = "/files";
 
 static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
 
@@ -90,7 +96,7 @@ fn parse_range_header(header_value: &str, file_size: u64) -> Option<(u64, u64)> 
     None
 }
 
-#[get("/download-range/{filename:.*}")]
+#[get("/fastdl/{filename:.*}")]
 async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     // let filename = sanitize_filename(path.into_inner());
     let filename = sanitize(path.into_inner());
@@ -177,7 +183,7 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
         .map(char::from)
         .collect();
 
-    let full_url = format!("/download-range/{}?token={}&expires={}", filename, token, expires);
+    let full_url = format!("/fastdl/{}?token={}&expires={}", filename, token, expires);
     SHORTLINKS.insert(short_id.clone(), (full_url.clone(), expires));
 
     let conn_info = req.connection_info();
