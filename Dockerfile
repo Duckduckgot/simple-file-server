@@ -1,4 +1,4 @@
-FROM rust:buster as rust
+FROM rust:latest as rust
 
 LABEL org.opencontainers.image.source https://github.com/Duckduckgot/simple-file-server
 
