@@ -95,7 +95,7 @@ fn parse_range_header(header_value: &str, file_size: u64) -> Option<(u64, u64)> 
     None
 }
 
-#[get("/download-range/{filename:.*}")]
+#[get("/fastdl/{filename:.*}")]
 async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     let filename = sanitize_filename(path.into_inner());
 
@@ -152,6 +152,11 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
 #[get("/generate-download-url/{filename:.*}")]
 async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     let filename = sanitize_filename(path.into_inner());
+    let file_path = PathBuf::from(FILE_DIR).join(&filename);
+
+    if !file_path.exists() {
+        return HttpResponse::NotFound().body("File not found");
+    }
     let default_ttl = 300;
     let max_ttl = 3600;
 
@@ -180,7 +185,7 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
         .map(char::from)
         .collect();
 
-    let full_url = format!("/download-range/{}?token={}&expires={}", filename, token, expires);
+    let full_url = format!("/fastdl/{}?token={}&expires={}", filename, token, expires);
     SHORTLINKS.insert(short_id.clone(), (full_url.clone(), expires));
 
     let conn_info = req.connection_info();
