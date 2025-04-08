@@ -155,6 +155,12 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
 async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> impl Responder {
     // let filename = sanitize_filename(path.into_inner());
     let filename = sanitize(path.into_inner());
+    let file_path = PathBuf::from(FILE_DIR).join(&filename);
+
+    if !file_path.exists() {
+        return HttpResponse::NotFound().body("File not found");
+    }
+    
     let default_ttl = 300;
     let max_ttl = 3600;
 
