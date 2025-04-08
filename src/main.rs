@@ -50,7 +50,7 @@ fn generate_token(filename: &str, expires: u64) -> String {
     use sha2::Sha256;
     type HmacSha256 = Hmac<Sha256>;
 
-    let mut mac = HmacSha256::new_from_slice(SECRET_KEY).unwrap();
+    let mut mac = HmacSha256::new_from_slice(&SECRET_KEY).unwrap();
     mac.update(filename.as_bytes());
     mac.update(expires.to_string().as_bytes());
     hex::encode(mac.finalize().into_bytes())
