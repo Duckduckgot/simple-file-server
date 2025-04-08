@@ -4,7 +4,8 @@ LABEL org.opencontainers.image.source https://github.com/Duckduckgot/simple-file
 
 WORKDIR /src
 COPY . .
-RUN cargo build --release 
+RUN rustup target add x86_64-unknown-linux-musl
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
 FROM debian:buster
 RUN useradd -ms /bin/bash -u 1001 kali
