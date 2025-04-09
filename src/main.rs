@@ -2,20 +2,16 @@ use actix_multipart::Multipart;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::collections::HashMap;
-use std::sync::Mutex;
 use std::io::SeekFrom;
 use tokio::io::{AsyncSeekExt, AsyncReadExt, AsyncWriteExt};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use hex;
-use lazy_static::lazy_static;
-use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder, http::header};
+use actix_web::{delete, get, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder, http::header::{CONTENT_DISPOSITION, ContentDisposition, DispositionType, DispositionParam}};
+use actix_web::http::header;
 use futures::{StreamExt, TryStreamExt};
 use sanitize_filename::sanitize;
 use tokio::{fs::{File, OpenOptions}};
 use std::fs;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use base64::{engine::general_purpose, Engine as _};
 use tokio_util::io::ReaderStream;
 use clap::{Command, arg};
 use rustls::{ServerConfig, Certificate};
@@ -29,21 +25,15 @@ use once_cell::sync::Lazy;
 use actix_cors::Cors;
 use std::env;
 
-type HmacSha256 = Hmac<Sha256>;
-
 static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
     env::var("SECRET_KEY")
         .unwrap_or_else(|_| "super_secret_key".to_string())
         .into_bytes()
 });
 
-const FILE_DIR: &str = "/files";
+const FILE_DIR: &str = r"\files";
 
 static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
-
-fn sanitize_filename(input: String) -> String {
-    input.replace("../", "").replace("/", "")
-}
 
 fn generate_token(filename: &str, expires: u64) -> String {
     use hmac::{Hmac, Mac};
@@ -96,10 +86,20 @@ fn parse_range_header(header_value: &str, file_size: u64) -> Option<(u64, u64)> 
     None
 }
 
+// === STREAM ===
+#[get("/stream/{filename:.*}")]
+async fn vod_file(path: web::Path<String>, req: HttpRequest) -> impl Responder {
+    stream_file(path.into_inner(), req, false).await
+}
+
+// === DOWNLOAD ===
 #[get("/fastdl/{filename:.*}")]
-async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Responder {
-    // let filename = sanitize_filename(path.into_inner());
-    let filename = sanitize(path.into_inner());
+async fn download_file(path: web::Path<String>, req: HttpRequest) -> impl Responder {
+    stream_file(path.into_inner(), req, true).await
+}
+
+async fn stream_file(filename_raw: String, req: HttpRequest, for_download: bool) -> impl Responder {
+    let filename = sanitize(filename_raw.clone());
 
     if !is_token_valid(&req, &filename) {
         return HttpResponse::Unauthorized().body("Invalid or expired token");
@@ -125,6 +125,15 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
     let content_type = from_path(&file_path).first_or_octet_stream();
     let range_header = req.headers().get("Range");
 
+    let content_disposition = if for_download {
+        Some(ContentDisposition {
+            disposition: DispositionType::Attachment,
+            parameters: vec![DispositionParam::Filename(filename.clone().into())],
+        })
+    } else {
+        None
+    };
+
     if let Some(range_header) = range_header {
         if let Ok(range_str) = range_header.to_str() {
             if let Some((start, end)) = parse_range_header(range_str, file_size) {
@@ -135,49 +144,65 @@ async fn download_range(path: web::Path<String>, req: HttpRequest) -> impl Respo
                 let chunk_size = end - start + 1;
                 let stream = ReaderStream::new(file.take(chunk_size));
 
-                return HttpResponse::PartialContent()
-                    .append_header(("Content-Type", content_type.to_string()))
-                    .append_header(("Content-Range", format!("bytes {}-{}/{}", start, end, file_size)))
-                    .append_header(("Accept-Ranges", "bytes"))
-                    .streaming(stream);
+                let mut builder = HttpResponse::PartialContent();
+                builder.append_header(("Content-Type", content_type.to_string()));
+                builder.append_header(("Content-Range", format!("bytes {}-{}/{}", start, end, file_size)));
+                builder.append_header(("Accept-Ranges", "bytes"));
+
+                if let Some(cd) = content_disposition {
+                    builder.append_header((CONTENT_DISPOSITION, cd));
+                }
+
+                return builder.streaming(stream);
             }
         }
     }
 
     let stream = ReaderStream::new(file);
-    HttpResponse::Ok()
-        .append_header(("Content-Type", content_type.to_string()))
-        .append_header(("Accept-Ranges", "bytes"))
-        .streaming(stream)
+    let mut builder = HttpResponse::Ok();
+    builder.append_header(("Content-Type", content_type.to_string()));
+    builder.append_header(("Accept-Ranges", "bytes"));
+
+    if let Some(cd) = content_disposition {
+        builder.append_header((CONTENT_DISPOSITION, cd));
+    }
+
+    builder.streaming(stream)
 }
 
 #[get("/generate-download-url/{filename:.*}")]
 async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> impl Responder {
-    // let filename = sanitize_filename(path.into_inner());
     let filename = sanitize(path.into_inner());
     let file_path = PathBuf::from(FILE_DIR).join(&filename);
 
     if !file_path.exists() {
         return HttpResponse::NotFound().body("File not found");
     }
-    
+
+    let query = req.uri().query().unwrap_or("");
     let default_ttl = 300;
     let max_ttl = 3600;
 
-    let ttl = req.uri().query()
-        .and_then(|q| {
-            q.split('&')
-                .find_map(|p| {
-                    let (k, v) = p.split_once('=')?;
-                    if k == "ttl" {
-                        v.parse::<u64>().ok()
-                    } else {
-                        None
+    let mut ttl = default_ttl;
+    let mut mode = "fastdl"; // по умолчанию
+
+    for param in query.split('&') {
+        if let Some((k, v)) = param.split_once('=') {
+            match k {
+                "ttl" => {
+                    if let Ok(val) = v.parse::<u64>() {
+                        ttl = val.min(max_ttl);
                     }
-                })
-        })
-        .unwrap_or(default_ttl)
-        .min(max_ttl);
+                }
+                "mode" => {
+                    if v == "stream" || v == "fastdl" {
+                        mode = v;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     let expires = now + ttl;
@@ -189,7 +214,7 @@ async fn generate_download_url(path: web::Path<String>, req: HttpRequest) -> imp
         .map(char::from)
         .collect();
 
-    let full_url = format!("/fastdl/{}?token={}&expires={}", filename, token, expires);
+    let full_url = format!("/{}/{filename}?token={token}&expires={expires}", mode);
     SHORTLINKS.insert(short_id.clone(), (full_url.clone(), expires));
 
     let conn_info = req.connection_info();
@@ -310,7 +335,7 @@ async fn upload(mut payload: Multipart) -> impl Responder {
 ///
 /// An `HttpResponse` which can be `Ok` with the file's content as the body 
 /// or `NotFound` if the file doesn't exist.
-#[get("/download/{filename}")]
+#[get("/kurdat/{filename}")]
 async fn download(filename: web::Path<String>) -> impl Responder {
     let filename = sanitize(filename.into_inner());
     let filepath = PathBuf::from(FILE_DIR).join(&filename);
@@ -337,7 +362,7 @@ async fn download(filename: web::Path<String>) -> impl Responder {
 /// An `HttpResponse` which can be `Ok` with a `Stream` of the file's content as the body,
 /// `InternalServerError` if there was a problem reading the file,
 /// or `NotFound` if the file doesn't exist.
-#[get("/download-chunked/{filename:.*}")]
+#[get("/kurdat-chunked/{filename:.*}")]
 async fn chunked_download(path: web::Path<String>) -> impl Responder {
     let filename = sanitize(path.into_inner());
     let file_path = PathBuf::from(FILE_DIR).join(filename);
@@ -477,8 +502,8 @@ async fn main() -> std::io::Result<()> {
             )
             .service(upload)
             .service(download)
-            .service(chunked_download)
-            .service(download_range)
+            .service(download_file)
+            .service(vod_file)
             .service(generate_download_url)
             .service(redirect_short_link)
             .service(delete)
