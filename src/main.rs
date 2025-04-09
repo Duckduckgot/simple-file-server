@@ -31,7 +31,7 @@ static SECRET_KEY: Lazy<Vec<u8>> = Lazy::new(|| {
         .into_bytes()
 });
 
-const FILE_DIR: &str = r"\files";
+const FILE_DIR: &str = "/files";
 
 static SHORTLINKS: Lazy<Arc<DashMap<String, (String, u64)>>> = Lazy::new(|| Arc::new(DashMap::new()));
 
